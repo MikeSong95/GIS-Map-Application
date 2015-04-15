@@ -1,0 +1,184 @@
+#include "DrawFeaturesFunctions.h"
+
+// Global singleton class of data structures declared in m1.cpp
+extern MapDatabase* mapDatabase;
+
+// This function adds the necessary data to the featureIDtoValue and featureIDtoPoints maps declared in DataStructures, and is called in m1.cpp's load_map(string) at the start of the program
+void addFeaturesToDatabase() {
+    vector<string> wantedFeatures = {"natural","water","waterway","land","leisure","landuse"}; // **CHANGE THIS to add more features**
+   
+    t_point* featurePointsList;
+    
+    // iterate through wantedFeatures vector to get desired features stored in database
+    for (unsigned i = 0; i < wantedFeatures.size(); i++) {
+        // Create features database to find return value (i.e. attribute) - can add more if statements to add other desired features in map
+        for (unsigned j = 0; j < getFeatureCount(); j++) {
+            // If the feature being inspected matches the indexed string of wantedFeatures (doesn't return " "), add to database
+            if (getFeatureAttribute(j, wantedFeatures[i]) != "") {
+                // Add that feature to featureIDtoValue map with its ID and feature value
+                mapDatabase->addFeatureValue(j, getFeatureAttribute(j, wantedFeatures[i]));
+
+                // Dynamically allocate a t_point array of all the jth feature's defining points
+                featurePointsList = new t_point [getFeaturePointCount(j)];
+
+                // Iterate through all comprising LatLon points of featureID = i, convert them to (x,y), and add them to featurePointsList
+                for (unsigned k = 0; k < getFeaturePointCount(j); k++) {
+                    featurePointsList[k].x = getFeaturePoint(j, k).lon;
+                    featurePointsList[k].y = getFeaturePoint(j, k).lat;
+                }
+
+                // Finally, add featureXyPointsList (and its matching featureID to the map data structure)
+                mapDatabase->addFeaturePoints(j, featurePointsList);
+                
+                // Clear memory leaks
+                featurePointsList = NULL;
+                delete[] featurePointsList;
+                
+                
+            }
+        }
+    }
+}
+
+// If you want to draw more features, add more if statements to addFeaturesToDatabase() function above
+// NOTE: the order of the features MATTER, please do not change unless you know what you are doing :)
+void drawFeatures() {
+    // Iterate through all feature ids
+    for (unsigned i = 0; i < getFeatureCount(); i++) {
+            
+// -------------------------------------- LAND FEATURES -------------------------------------- //      
+        
+        if (mapDatabase->getFeatureValue(i) == "island") {
+            setcolor(190, 150, 80); // brown
+            fillpoly(mapDatabase->getFeaturePoints(i), getFeaturePointCount(i)); 
+        } 
+        
+// -------------------------------------- NATURAL FEATURES -------------------------------------- // 
+        
+        else if (mapDatabase->getFeatureValue(i) == "water") {
+            setcolor(79, 167, 240); // light blue
+            fillpoly(mapDatabase->getFeaturePoints(i), getFeaturePointCount(i));
+        }
+        else if (mapDatabase->getFeatureValue(i) == "grassland") {
+            setcolor(165, 245, 110); // light green
+            fillpoly(mapDatabase->getFeaturePoints(i), getFeaturePointCount(i));
+        }
+        else if (mapDatabase->getFeatureValue(i) == "scrub") {
+            setcolor(120, 227, 54); // mid-shade green
+            fillpoly(mapDatabase->getFeaturePoints(i), getFeaturePointCount(i)); 
+        }
+        else if (mapDatabase->getFeatureValue(i) == "wood") {
+            setcolor(82, 180, 20); // dark green
+            fillpoly(mapDatabase->getFeaturePoints(i), getFeaturePointCount(i));
+        }
+        else if (mapDatabase->getFeatureValue(i) == "tree_row") {
+            setlinestyle(1); // dashed
+            setlinewidth(4);
+            setcolor(82, 180, 20); // dark green
+            setlinestyle(0); // set back to normal
+        } 
+        else if (mapDatabase->getFeatureValue(i) == "sand") {
+            setcolor(250, 235, 125); // light yellow-orange-grey
+            fillpoly(mapDatabase->getFeaturePoints(i), getFeaturePointCount(i));
+        }
+        else if (mapDatabase->getFeatureValue(i) == "beach") {
+            setcolor(250, 235, 125); // light yellow-orange-grey
+            fillpoly(mapDatabase->getFeaturePoints(i), getFeaturePointCount(i));
+        }
+        
+// -------------------------------------- WATER FEATURES -------------------------------------- // 
+        
+        else if (mapDatabase->getFeatureValue(i) == "rapids") {
+            setlinewidth(4); // rivers are larger and deeper than streams -> thicker lines
+            setcolor(79, 167, 240); // light blue
+            
+            for (unsigned j = 0; j < (getFeaturePointCount(i)-1); j++) {
+                drawline(mapDatabase->getFeaturePoints(i)[j], mapDatabase->getFeaturePoints(i)[j+1]);
+            }
+            
+            // outline with same colour fill
+            fillpoly(mapDatabase->getFeaturePoints(i), getFeaturePointCount(i)); 
+        }
+        else if (mapDatabase->getFeatureValue(i) == "pond") {
+            setcolor(79, 167, 240); // light blue
+            fillpoly(mapDatabase->getFeaturePoints(i), getFeaturePointCount(i));
+        }
+        else if (mapDatabase->getFeatureValue(i) == "lake") {
+            setcolor(79, 167, 240); // light blue
+            fillpoly(mapDatabase->getFeaturePoints(i), getFeaturePointCount(i));
+        }
+        else if (mapDatabase->getFeatureValue(i) == "lagoon") {
+            setcolor(79, 167, 240); // light blue
+            fillpoly(mapDatabase->getFeaturePoints(i), getFeaturePointCount(i));
+        }
+        else if (mapDatabase->getFeatureValue(i) == "wetland") {
+            setcolor(40, 205, 160); // turquoise-green
+            fillpoly(mapDatabase->getFeaturePoints(i), getFeaturePointCount(i)); 
+        }
+      
+// -------------------------------------- WATERWAY FEATURES -------------------------------------- //
+        
+        else if (mapDatabase->getFeatureValue(i) == "river") {
+            setlinewidth(4); // rivers are larger and deeper than streams -> thicker lines
+            setcolor(79, 167, 240); // light blue
+            
+            for (unsigned j = 0; j < (getFeaturePointCount(i)-1); j++) {
+                drawline(mapDatabase->getFeaturePoints(i)[j], mapDatabase->getFeaturePoints(i)[j+1]);
+            }
+        }
+        else if (mapDatabase->getFeatureValue(i) == "stream") {
+            setlinewidth(2);
+            setcolor(79, 167, 240); // light blue
+            
+            for (unsigned j = 0; j < (getFeaturePointCount(i)-1); j++) {
+                drawline(mapDatabase->getFeaturePoints(i)[j], mapDatabase->getFeaturePoints(i)[j+1]);
+            }
+        }
+        else if (mapDatabase->getFeatureValue(i) == "riverbank") {
+            setcolor(79, 167, 240); // light blue
+            fillpoly(mapDatabase->getFeaturePoints(i), getFeaturePointCount(i));
+        }
+        else if (mapDatabase->getFeatureValue(i) == "boatyard") {
+            setcolor(60, 90, 165); // navy blue
+            fillpoly(mapDatabase->getFeaturePoints(i), getFeaturePointCount(i)); 
+        }
+        else if (mapDatabase->getFeatureValue(i) == "dam") {
+            setcolor(132, 143, 153); // dark grey with hint of blue
+            fillpoly(mapDatabase->getFeaturePoints(i), getFeaturePointCount(i)); 
+        }
+        else if (mapDatabase->getFeatureValue(i) == "drain") {
+            setlinewidth(2);
+            setcolor(132, 143, 153); // dark grey with hint of blue
+            
+            for (unsigned j = 0; j < (getFeaturePointCount(i)-1); j++) {
+                drawline(mapDatabase->getFeaturePoints(i)[j], mapDatabase->getFeaturePoints(i)[j+1]);
+            }
+        }
+        else if (mapDatabase->getFeatureValue(i) == "ditch") {
+            setlinewidth(4); // thicker than drain
+            setcolor(132, 143, 153); // dark grey with hint of blue
+            
+            for (unsigned j = 0; j < (getFeaturePointCount(i)-1); j++) {
+                drawline(mapDatabase->getFeaturePoints(i)[j], mapDatabase->getFeaturePoints(i)[j+1]);
+            }
+        }
+   
+// -------------------------------------- LEISURE FEATURES -------------------------------------- //  
+        
+        else if (mapDatabase->getFeatureValue(i) == "park") {
+            setcolor(215,255,130); // lime-green
+            fillpoly(mapDatabase->getFeaturePoints(i), getFeaturePointCount(i)); 
+        }
+        else if (mapDatabase->getFeatureValue(i) == "nature_reserve") {
+            setcolor(215,255,130); // lime-green
+            fillpoly(mapDatabase->getFeaturePoints(i), getFeaturePointCount(i)); 
+        }
+              
+// -------------------------------------- LANDUSE FEATURES -------------------------------------- // 
+        
+        else if (mapDatabase->getFeatureValue(i) == "park") {
+            setcolor(215,255,130); // lime-green
+            fillpoly(mapDatabase->getFeaturePoints(i), getFeaturePointCount(i)); 
+        }
+    }
+}

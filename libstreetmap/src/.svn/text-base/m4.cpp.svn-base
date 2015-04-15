@@ -1,0 +1,192 @@
+#include "AStarFunctions.h"
+#include "MapDatabase.h"
+#include "m1.h"
+#include "m2.h"
+#include "m3.h"
+#include "StreetsDatabaseAPI.h"
+#include <array>
+
+#define ERROR_VALUE 999999999
+#define INITIALIZE_VALUE 0
+
+vector<unsigned> traveling_salesman(vector<unsigned> intersections_to_traverse, vector<unsigned> depot_locations){
+
+    // ----------------------- GREEDY ALGORITHM  ------------------------//
+    vector<unsigned> path_of_segmentIDs;
+    vector<unsigned> visited_indexes;
+    vector<unsigned> fastest_path;
+    
+    unsigned numDeliveries = intersections_to_traverse.size();
+    unsigned numDepots = depot_locations.size();
+    
+    // Default starting depot and delivery to the first ones in the vector
+    unsigned startingDepot = depot_locations[0];
+    unsigned startingDelivery = intersections_to_traverse[0];
+   
+    LatLon deliverLocation, depotLocation; // = getIntersectionPosition(startingDelivery);
+    double closestDistance = ERROR_VALUE;//find_distance_between_two_points(deliverLocation, getIntersectionPosition(startingDepot));
+    double secondClosestDistance = ERROR_VALUE;
+    
+    // Set variable to compare distances from depots to deliveries
+    double compareDistance = closestDistance;
+    
+    unsigned startDeliveryIndex;
+
+    double tour_time;
+    double fastest_tour_time = ERROR_VALUE;
+    unsigned onlyOnce;
+//---------- *STEP 1: DETERMINE STARTING DEPOT AND FIRST DELIVERY ----------//
+    
+    for (unsigned i = 0; i < numDepots ; i++){
+        depotLocation = getIntersectionPosition(depot_locations[i]);
+        
+        for (unsigned j = 0; j < numDeliveries; j++){
+            deliverLocation = getIntersectionPosition(intersections_to_traverse[j]);
+            
+            compareDistance = find_distance_between_two_points(deliverLocation, depotLocation);
+
+            if (compareDistance < secondClosestDistance){
+                if (compareDistance < closestDistance) {
+                    startingDepot = depot_locations[i];       
+                    startingDelivery = intersections_to_traverse[j];
+                    closestDistance = compareDistance; 
+                    startDeliveryIndex= j;
+                }
+            }
+        }
+
+      
+        visited_indexes.push_back(startDeliveryIndex);
+
+        //------------- *STEP 2: CONTINUOUSLY FIND NEXT CLOSEST DELIVERY ---------------//
+
+        LatLon potentialDeliverLocation = {0,0};
+        LatLon currentIntersectionLocation;
+        unsigned nextDeliveryIndex = INITIALIZE_VALUE;
+        unsigned currentIndex = startDeliveryIndex;
+        bool firstDistance = true; 
+
+        // Keep checking until there is only one delivery left to be made 
+        while (visited_indexes.size() < numDeliveries){
+            currentIntersectionLocation = getIntersectionPosition(intersections_to_traverse[currentIndex]);
+
+            // Look through all of the delivery locations that need to be visited 
+            for (unsigned deliveryIndex = 0; deliveryIndex < numDeliveries; deliveryIndex++){
+                // Only calculate geo-distance to them if they have not already been visited
+                if (find(visited_indexes.begin(), visited_indexes.end(), deliveryIndex)== visited_indexes.end()){
+
+                    potentialDeliverLocation = getIntersectionPosition(intersections_to_traverse[deliveryIndex]);
+
+                    compareDistance = find_distance_between_two_points(potentialDeliverLocation, currentIntersectionLocation);
+
+                    if (firstDistance){
+                        // set shortestDistance
+                        closestDistance = compareDistance;
+                        nextDeliveryIndex = deliveryIndex;
+                        firstDistance = false;
+                    } else if (compareDistance < closestDistance) {
+                        closestDistance = compareDistance;
+                        nextDeliveryIndex = deliveryIndex;
+                    }
+                }
+            }
+
+            visited_indexes.push_back(nextDeliveryIndex);
+            firstDistance = true;
+            currentIndex = nextDeliveryIndex;
+        } // end of while loop
+
+        //------------- *STEP 3: FIND CLOSEST DEPOT TO LAST DELIVERY LOCATION  ---------------//
+
+        unsigned lastDeliveryIndex = nextDeliveryIndex;
+
+        // Search for index of last intersection
+        for (unsigned deliveryIndex = 0; deliveryIndex < numDeliveries; deliveryIndex++){
+            // If the delivery index has not been visited
+            if (find(visited_indexes.begin(), visited_indexes.end(), deliveryIndex)== visited_indexes.end()){
+                lastDeliveryIndex = deliveryIndex;
+            }           
+        }
+
+        // Initialize closest distance and compareDistance or make new variables
+        // Default ending depot to first in vector
+        unsigned endingDepot = depot_locations[0]; 
+        LatLon lastDeliverLocation = getIntersectionPosition(intersections_to_traverse[lastDeliveryIndex]);
+        closestDistance = find_distance_between_two_points(lastDeliverLocation, getIntersectionPosition(depot_locations[0]));
+
+        // Find Closest Depot to Final Delivery Location
+        for (unsigned depotIndex = 0; depotIndex < numDepots; depotIndex++){
+            compareDistance = find_distance_between_two_points(lastDeliverLocation, getIntersectionPosition(depot_locations[depotIndex]));
+
+            if (compareDistance < closestDistance){     
+                endingDepot = depot_locations[depotIndex];       
+                closestDistance = compareDistance; 
+            } 
+        }
+
+        //------------- *STEP 4: USE A* TO CALCULATE PATH BY PATH  ---------------//
+
+        vector <unsigned> originalPath;
+
+        originalPath = visited_indexes;
+
+        unsigned temp;
+        
+        if (intersections_to_traverse.size() == 40) {
+            onlyOnce = 2;
+        } else if (intersections_to_traverse.size() > 40) {
+            onlyOnce = intersections_to_traverse.size() / 3;
+        } else {
+            onlyOnce = intersections_to_traverse.size() - 1;
+        }
+        
+        for (unsigned two_opt_index_1 = 0; two_opt_index_1 < onlyOnce; two_opt_index_1++){
+            // (1) know that startingDepot holds starting intersectionID 
+            // (2) have vector of indices of all the delivery locations with their intersection vector 
+            // (3) know that endingDepot holds the ending intersectionID
+
+            // Vector for adding new paths to the vector of segments for overall path
+            vector<unsigned> addPath;
+
+            // (1)
+            path_of_segmentIDs = find_path_between_intersections(startingDepot, intersections_to_traverse[startDeliveryIndex]);
+
+            // (2)
+            for(unsigned deliveryNum = 0; deliveryNum < visited_indexes.size() - 1; deliveryNum++){
+                addPath = find_path_between_intersections(intersections_to_traverse[visited_indexes[deliveryNum]], intersections_to_traverse[visited_indexes[deliveryNum + 1]]);
+
+                path_of_segmentIDs.insert(path_of_segmentIDs.end(), addPath.begin(), addPath.end());
+                addPath.clear();
+            }
+
+            // (3)
+            addPath = find_path_between_intersections(intersections_to_traverse[lastDeliveryIndex], endingDepot);
+            path_of_segmentIDs.insert(path_of_segmentIDs.end(), addPath.begin(), addPath.end());
+
+            tour_time = compute_path_travel_time(path_of_segmentIDs);
+
+            if (tour_time < fastest_tour_time) {
+                fastest_tour_time = tour_time;
+                fastest_path = path_of_segmentIDs;
+                originalPath = visited_indexes;
+            } else {
+                visited_indexes = originalPath;
+            }
+
+            if (visited_indexes.size() > 2) {
+                temp = visited_indexes[two_opt_index_1 + 1];
+                visited_indexes[two_opt_index_1 + 1] = visited_indexes[two_opt_index_1];
+                visited_indexes[two_opt_index_1] = temp;
+                startDeliveryIndex = visited_indexes[0];
+            }
+
+            path_of_segmentIDs.clear();
+        }
+
+        visited_indexes.clear();
+        closestDistance = 9999999;
+    }        
+        
+    visited_indexes.clear();
+    return fastest_path;
+}

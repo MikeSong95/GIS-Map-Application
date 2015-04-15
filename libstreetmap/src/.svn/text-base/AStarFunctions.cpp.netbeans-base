@@ -1,0 +1,341 @@
+#include <queue>
+#include <algorithm>
+
+#include "AStarFunctions.h"
+#include "StreetEdge.h"
+#include "MapDatabase.h"
+#include "m2.h"
+
+#define ERROR_VALUE 999999999
+#define INITIALIZE_VALUE 0
+
+extern MapDatabase* mapDatabase;
+
+// Prototypes
+vector<unsigned> reconstructPath(map<unsigned, unsigned> came_from, unsigned current);
+
+vector<unsigned> AStarAlgorithm(unsigned startId, unsigned goalId) {
+    vector<unsigned> failure = {ERROR_VALUE};
+    
+    if (startId != ERROR_VALUE && goalId != ERROR_VALUE) {
+        // The set of tentative nodes to be evaluated, initially containing the start node
+        // Intersection id -> f score
+        map<unsigned,double> openSet; 
+        // The set of nodes already evaluated
+        // Intersection id -> f score
+        vector<unsigned> closedSet;
+        // Map of navigated nodes
+        // Intersection id -> intersection it came from
+        map<unsigned, unsigned> came_from;
+        bool in_came_from = false;  // Flag for if an intersection is in came_from
+        // Map of g scores corresponding to intersections
+        // intersection id -> g score
+        map<unsigned, double> intersectionGScores;
+        map<unsigned, double> intersectionFScores;
+
+        // Initialize prev, current, and neighbour intersections
+        unsigned prevIntersection = startId;
+        unsigned currentIntersection = startId;
+        unsigned neighbourIntersection = INITIALIZE_VALUE;
+        
+        // Initialize current and neighbor street segments
+        unsigned currentStreetSegment = ERROR_VALUE;
+        unsigned neighborStreetSegment = ERROR_VALUE;
+        
+        double tentative_g_score = INITIALIZE_VALUE;
+        double weight_current_to_neighbor = INITIALIZE_VALUE;
+
+        bool atStartIntersection = true;
+        
+        double g_score_neighbour;
+        
+        // Navigated node originally contains the starting node
+        came_from.insert(make_pair(startId, ERROR_VALUE));
+        // Open set originally contains the starting node with f value of 0
+        openSet.insert(make_pair(startId, heuristic (startId, goalId))); 
+        
+        intersectionGScores.insert(make_pair(startId, 0));
+        intersectionFScores.insert(make_pair(startId, heuristic (startId, goalId)));
+
+        while (!openSet.empty()) {
+            // The intersection to check is the one in open set with the lowest f score
+            currentIntersection = lowestFScoreNode(openSet);
+            
+            if (currentIntersection == startId) {
+                atStartIntersection = true;
+            } else {
+                atStartIntersection = false;
+            }
+            // Gets the street segment id of the segment connecting previous intersection to current intersection
+            // with the shortest traversal time
+            if (!atStartIntersection) {
+                currentStreetSegment = getSegmentBetweenIntersections(prevIntersection, currentIntersection);
+            } 
+            
+            // Keep track of previous intersection
+            prevIntersection = currentIntersection;
+            
+            // Reached the destination
+            if (currentIntersection == goalId) {
+                // Reconstruct path
+                return reconstructPath(came_from, goalId);
+            }
+
+            // Remove current from open set and add it to closed set
+            openSet.erase(openSet.find(currentIntersection));
+            closedSet.push_back(currentIntersection); 
+
+            // Check the adjacent intersections around current intersection
+            for (unsigned neighborEdge = 0; neighborEdge < mapDatabase->getStreetEdges(currentIntersection).size(); neighborEdge++) {
+                neighbourIntersection = mapDatabase->getStreetEdges(currentIntersection)[neighborEdge].getTargetIntersection();
+                
+                // If an adjacent street edge is not in closed set, check it
+                if (find(closedSet.begin(), closedSet.end(), neighbourIntersection) == closedSet.end()) {
+                    neighborStreetSegment = getSegmentBetweenIntersections (currentIntersection, neighbourIntersection);
+
+                    // Find the weight of the segment between current intersection and neighbor intersection
+                    weight_current_to_neighbor = mapDatabase->getStreetEdges(currentIntersection)[neighborEdge].getEdgeWeight();
+                    
+                    // Account for 15 second turn times
+                    if (!atStartIntersection) { // If not at the start intersection, compare current street seg with neighbor street seg
+                        tentative_g_score = intersectionGScores[currentIntersection] + weight_current_to_neighbor + addTurnTimeMin2 (currentStreetSegment, neighborStreetSegment);
+                    } else {
+                        // No segment between intersections
+                        tentative_g_score = weight_current_to_neighbor;
+                    }
+                    
+                    // If neighbor not in openset or tentative_g_score < g_score[neighbor] 
+                    if (openSet.find(neighbourIntersection) == openSet.end() || tentative_g_score < intersectionGScores[neighbourIntersection]) {     
+                        // Change neighbor's came_from intersection to current intersection
+                        for (auto iter = came_from.begin(); iter != came_from.end(); iter++) {  
+                            if ((*iter).first == neighbourIntersection) {
+                                (*iter).second = currentIntersection;
+                                in_came_from = true;
+                            }
+                        } 
+                             
+                        // If neighbor intersection is not in the came_from map, add it
+                        if (!in_came_from) {
+                            came_from.insert(make_pair(neighbourIntersection, currentIntersection));
+                        }
+
+                        // Set neighbor intersection's g score to the lower g score and recalculate its f score
+                        mapDatabase->getStreetEdges(currentIntersection)[neighborEdge].set_g_score(tentative_g_score);
+                        intersectionGScores[neighbourIntersection] = tentative_g_score;
+                        mapDatabase->getStreetEdges(currentIntersection)[neighborEdge].set_h_score(heuristic (neighbourIntersection, goalId));
+                        mapDatabase->getStreetEdges(currentIntersection)[neighborEdge].set_f_score();
+
+                        // If neighbor not in open set
+                        if (openSet.find(neighbourIntersection) == openSet.end()) {
+                            openSet.insert(make_pair(neighbourIntersection, mapDatabase->getStreetEdges(currentIntersection)[neighborEdge].get_f_score())); 
+                        }
+                        
+                        // Reset in_came_from back to false
+                        in_came_from = false;
+                    } 
+                } else {    // The adjacent street edge is in the closed set
+                    continue; 
+                }
+            }
+            
+            /*if (atStartIntersection) {
+                // No longer at start intersection
+                atStartIntersection = false;
+            }*/
+        }
+
+        // If path not found, return failure (an empty vector of size == 0)
+        failure.clear();
+        return failure;
+    } else {
+        // Invalid intersection id, return failure
+        return failure;
+    }
+}
+
+// this does not account for "(unknown)" street names
+double addTurnTimeMin (unsigned ssIDfrom, unsigned ssIDto) {
+    if (ssIDfrom != ERROR_VALUE && ssIDto != ERROR_VALUE) {
+        double turnTimeMin = INITIALIZE_VALUE;
+
+        // Get street ID to which the street segment belongs
+        unsigned streetIDfrom = getStreetSegmentStreetID(ssIDfrom);
+        unsigned streetIDto = getStreetSegmentStreetID(ssIDto);
+
+        // Get street name from ID
+        string streetNamefrom = getStreetName(streetIDfrom);
+        string streetNameto = getStreetName(streetIDto);
+
+        // If change streets --> turn required
+        if (streetNamefrom.compare(streetNameto) != 0) {
+            turnTimeMin = 0.25; // Convert TIMETOTURN to minutes
+        } else {  // If still on same street -> no turn required
+            turnTimeMin = 0;
+        }
+
+        return turnTimeMin;
+    } else {
+        return 0;
+    }
+}
+
+// this does not account for "(unknown)" street names
+double addTurnTimeMin2 (unsigned ssIDfrom, unsigned ssIDto) {
+    if (ssIDfrom != ERROR_VALUE && ssIDto != ERROR_VALUE) {
+        double turnTimeMin = INITIALIZE_VALUE;
+
+        // Get street ID to which the street segment belongs
+        unsigned streetIDfrom = getStreetSegmentStreetID(ssIDfrom);
+        unsigned streetIDto = getStreetSegmentStreetID(ssIDto);
+
+        // Get street name from ID
+        string streetNamefrom = getStreetName(streetIDfrom);
+        string streetNameto = getStreetName(streetIDto);
+
+        // If change streets --> turn required
+        if (streetNamefrom.compare(streetNameto) != 0) {
+            if (getStreetSegmentSpeedLimit(ssIDfrom) < getStreetSegmentSpeedLimit(ssIDto)) {
+                turnTimeMin = 0.25; // Convert TIMETOTURN to minutes
+            } else {
+                turnTimeMin = 20;
+            }
+        } else {  // If still on same street -> no turn required
+            turnTimeMin = 0;
+        }
+
+        return turnTimeMin;
+    } else {
+        return 0;
+    }
+}
+
+// Computes the straight-line travel time between 2 points at the highest city speed limit
+double heuristic (unsigned currentIntersection, unsigned goalIntersection) {
+    if (currentIntersection != ERROR_VALUE && goalIntersection != ERROR_VALUE) {
+        LatLon point1 = getIntersectionPosition(currentIntersection);
+        LatLon point2 = getIntersectionPosition(goalIntersection);
+
+        double distanceBetweenPoints = find_distance_between_two_points(point1, point2);
+
+        double timeRequiredMin = 60 * distanceBetweenPoints / 120;
+
+        return timeRequiredMin;
+    } else {
+        return ERROR_VALUE;
+    }
+}
+
+/*
+// Returns the maximum speed limit of the loaded city; helper function for A* heuristic
+double getMaxSpeedLimit() {
+    double maxSpeedLimit = 0;
+    
+    for (unsigned i = 0; i < getNumberOfStreetSegments(); i++) {
+        if (getStreetSegmentSpeedLimit(i) > maxSpeedLimit) {
+            maxSpeedLimit = getStreetSegmentSpeedLimit(i);
+        } else {
+            continue;
+        }
+    }
+    
+    return maxSpeedLimit;
+}*/
+
+// Returns intersection from the open set which has the lowest f score
+unsigned lowestFScoreNode (map<unsigned, double> openSet) {
+    double f_score_lowest = 99999999;
+    unsigned bestNode = 0;
+ 
+    for (auto iter = openSet.begin(); iter != openSet.end(); iter++) {       
+        if ((*iter).second < f_score_lowest) {
+            f_score_lowest = (*iter).second;
+            bestNode = (*iter).first;
+        }
+    }
+    
+    return bestNode;
+}
+
+// Rebuilds came_from map to create traversable path
+vector<unsigned> reconstructPath(map<unsigned, unsigned> came_from, unsigned current) {
+    vector<unsigned> total_path; // Reconstructed path
+    vector<unsigned> path_segments; // Vector of segments between the intersections in came_from
+    
+    // Add the goal id to path
+    total_path.push_back(current);
+    
+    // We have reached the beginning intersection if current = ERROR_VALUE
+    // or we have reached the end of the came_from map
+    while (came_from.find(current) != came_from.end() || current != ERROR_VALUE) {
+        // Get the intersection id that the current intersection came from
+        current = came_from[current];
+        
+        total_path.push_back(current);
+    }
+    
+    // Take off ERROR_VALUE from the total_path
+    total_path.pop_back();
+    
+    // Make a vector of street segments from vector of intersections
+    for (unsigned i = 0; i < total_path.size()-1; i++) {        
+        path_segments.push_back(getSegmentBetweenIntersections (total_path[i], total_path[i+1]));
+    }
+    
+    // Reverse the order of the path so that the first element is the start intersection
+    reverse(path_segments.begin(), path_segments.end());
+    
+    return path_segments;
+}
+
+unsigned getSegmentBetweenIntersections (unsigned intersectionID1, unsigned intersectionID2) {
+    unsigned intersection_street_seg1, intersection_street_seg2;
+    unsigned commonSegmentId = INITIALIZE_VALUE;
+    unsigned fastestCommonSegment = INITIALIZE_VALUE;
+    double segmentTravelTime = INITIALIZE_VALUE;
+    double fastestTravelTime = 9999999;
+    vector<unsigned> segments;
+
+    bool oneWaySafe = false;
+    
+    StreetSegmentEnds segmentEnds;  // Intersections at either end of a street segment
+    unsigned long toInt;
+    
+    // Segments adjacent to intersection 1
+    for (unsigned segment1 = 0; segment1 < getIntersectionStreetSegmentCount(intersectionID1); segment1++) {
+        intersection_street_seg1 = getIntersectionStreetSegment(intersectionID1, segment1);
+
+        // Segments adjacent to intersection 2
+        for (unsigned segment2 = 0; segment2 < getIntersectionStreetSegmentCount(intersectionID2); segment2++) {
+            intersection_street_seg2 = getIntersectionStreetSegment(intersectionID2, segment2);
+
+            // If the two street segments are adjacent
+            if (intersection_street_seg1 == intersection_street_seg2) {
+                commonSegmentId = intersection_street_seg1;
+                segmentEnds = getStreetSegmentEnds(commonSegmentId);
+                toInt = segmentEnds.to;
+                
+                if (getStreetSegmentOneWay(commonSegmentId)){
+                    if (intersectionID1 == toInt)
+                        oneWaySafe = true;
+                    else{
+                        oneWaySafe = false;
+                    }
+                }else{
+                        oneWaySafe = true;
+                }
+                segmentTravelTime = find_segment_travel_time(commonSegmentId);
+
+                // Check to see if the segment travel time is faster than others segments pointing from 
+                // intersection 1 to intersection 2
+                if (segmentTravelTime < fastestTravelTime && oneWaySafe) {
+                    fastestCommonSegment = commonSegmentId;
+                    fastestTravelTime = segmentTravelTime;
+
+                }              
+            }
+        }
+    }
+                       
+    // Return the specified street segment
+    return fastestCommonSegment;
+}
